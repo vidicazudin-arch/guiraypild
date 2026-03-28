@@ -1,174 +1,233 @@
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "c00lgui v3 | FINAL STAND",
-   LoadingTitle = "Synchronizing Stand & Zero-G...",
-   LoadingSubtitle = "Hardware: Axioo N4020 Optimized",
+   Name = "c00lgui v4 | STAND OVERHEAVEN",
+   LoadingTitle = "Synchronizing Stand...",
+   LoadingSubtitle = "King Crimson + The World",
    ConfigurationSaving = { Enabled = true, FolderName = "C00L_Settings" },
    Theme = "Green",
 })
 
--- [[ GLOBAL VARIABLES ]] --
+-- SERVICES
 local p = game.Players.LocalPlayer
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 local Camera = workspace.CurrentCamera
 
-local flying, stealthFling, timeStopped, timeSkipping = false, false, false, false
-local flySpeed, customWS = 50, 16
-local originalGravity = workspace.Gravity
-local flyConnection, frozenObjects = nil, {}
-
--- [[ EFFECTS & AUDIO ]] --
-local stopEffect = Instance.new("ColorCorrectionEffect", game.Lighting)
-stopEffect.Enabled = false
-
-local kcColor = Instance.new("ColorCorrectionEffect", game.Lighting)
-kcColor.Enabled = false
-kcColor.TintColor = Color3.fromRGB(180, 100, 255)
-
-local kcStartSound = Instance.new("Sound", game.SoundService)
-kcStartSound.SoundId = "rbxassetid://9113110134"
-kcStartSound.Volume = 3
-
-local kcEndSound = Instance.new("Sound", game.SoundService)
-kcEndSound.SoundId = "rbxassetid://9113110294"
-kcEndSound.Volume = 3
-
-local function playBlink()
-    local blink = Instance.new("ColorCorrectionEffect", game.Lighting)
-    blink.Brightness = 1
-    TweenService:Create(blink, TweenInfo.new(0.3), {Brightness = 0}):Play()
-    game:GetService("Debris"):AddItem(blink, 0.4)
+-- CHARACTER
+local function getChar()
+    local c = p.Character or p.CharacterAdded:Wait()
+    return c, c:WaitForChild("HumanoidRootPart"), c:WaitForChild("Humanoid")
 end
 
--- [[ CHARACTER LOGIC ]] --
-local char = p.Character or p.CharacterAdded:Wait()
-local hrp = char:WaitForChild("HumanoidRootPart")
-local hum = char:WaitForChild("Humanoid")
+local char, hrp, hum = getChar()
 
-p.CharacterAdded:Connect(function(newChar)
-    char, hrp, hum = newChar, newChar:WaitForChild("HumanoidRootPart"), newChar:WaitForChild("Humanoid")
+p.CharacterAdded:Connect(function()
+    char, hrp, hum = getChar()
 end)
 
--- [[ TABS ]] --
+-- VAR
+local flying = false
+local flySpeed = 50
+local flyBV, flyBG
+
+local timeStopped = false
+local frozenPlayers = {}
+
+local timeSkipping = false
+
+-- UI
 local MainTab = Window:CreateTab("Movement", 4483362458)
 local WorldTab = Window:CreateTab("Stand Powers", 4483362458)
 local MiscTab = Window:CreateTab("Misc", 4483362458)
 
---- ZERO-G SPECTATOR FLY ---
+--------------------------------------------------
+-- ✈️ FLY (FIXED)
+--------------------------------------------------
 MainTab:CreateToggle({
-    Name = "Zero-G Spectator Fly",
+    Name = "Zero-G Fly",
     CurrentValue = false,
     Callback = function(v)
         flying = v
-        if flying then
-            workspace.Gravity = 0
-            hum.PlatformStand = true
-            flyConnection = RunService.RenderStepped:Connect(function()
-                if not flying or not hrp then return end
-                local moveDir = Vector3.new(0,0,0)
-                if UIS:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Camera.CFrame.LookVector end
-                if UIS:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - Camera.CFrame.LookVector end
-                if UIS:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - Camera.CFrame.RightVector end
-                if UIS:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Camera.CFrame.RightVector end
-                if UIS:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
-                if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir - Vector3.new(0, 1, 0) end
 
-                if moveDir.Magnitude > 0 then
-                    hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + Camera.CFrame.LookVector) * CFrame.new(moveDir.Unit * (flySpeed / 10))
-                else
-                    hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + Camera.CFrame.LookVector)
-                end
-                hrp.Velocity = Vector3.new(0, 0, 0)
+        if flying then
+            flyBV = Instance.new("BodyVelocity", hrp)
+            flyBV.MaxForce = Vector3.new(1e9,1e9,1e9)
+
+            flyBG = Instance.new("BodyGyro", hrp)
+            flyBG.MaxTorque = Vector3.new(1e9,1e9,1e9)
+
+            hum.PlatformStand = true
+
+            RunService:BindToRenderStep("Fly", 0, function()
+                local dir = Vector3.zero
+
+                if UIS:IsKeyDown(Enum.KeyCode.W) then dir += Camera.CFrame.LookVector end
+                if UIS:IsKeyDown(Enum.KeyCode.S) then dir -= Camera.CFrame.LookVector end
+                if UIS:IsKeyDown(Enum.KeyCode.A) then dir -= Camera.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.D) then dir += Camera.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0,1,0) end
+                if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then dir -= Vector3.new(0,1,0) end
+
+                flyBV.Velocity = (dir.Magnitude > 0) and dir.Unit * flySpeed or Vector3.zero
+                flyBG.CFrame = Camera.CFrame
             end)
+
         else
-            if flyConnection then flyConnection:Disconnect() end
-            workspace.Gravity = originalGravity
+            RunService:UnbindFromRenderStep("Fly")
+            if flyBV then flyBV:Destroy() end
+            if flyBG then flyBG:Destroy() end
             hum.PlatformStand = false
         end
     end
 })
 
-MainTab:CreateSlider({Name = "Fly Speed", Range = {10, 300}, CurrentValue = 50, Callback = function(v) flySpeed = v end})
+MainTab:CreateSlider({
+    Name = "Fly Speed",
+    Range = {10,300},
+    CurrentValue = 50,
+    Callback = function(v)
+        flySpeed = v
+    end
+})
 
---- STAND ABILITIES ---
-WorldTab:CreateSection("Dio: THE WORLD")
+--------------------------------------------------
+-- ⏱️ TIME STOP
+--------------------------------------------------
+WorldTab:CreateSection("THE WORLD")
+
 WorldTab:CreateToggle({
-    Name = "TIME STOP (Physical Lock)", 
-    CurrentValue = false, 
+    Name = "Time Stop",
+    CurrentValue = false,
     Callback = function(v)
         timeStopped = v
-        stopEffect.Enabled, stopEffect.Saturation = v, (v and -1 or 0)
+
         if v then
-            game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents.SayMessageRequest:FireServer("ZA WARUDO!!!", "All")
-            for _, obj in pairs(workspace:GetDescendants()) do
-                if obj:IsA("BasePart") and not obj.Anchored and not obj:IsDescendantOf(char) then
-                    if (obj.Position - hrp.Position).Magnitude < 150 then
-                        obj.Anchored = true
-                        table.insert(frozenObjects, obj)
+            for _,plr in pairs(game.Players:GetPlayers()) do
+                if plr ~= p and plr.Character then
+                    local h = plr.Character:FindFirstChild("Humanoid")
+                    if h then
+                        frozenPlayers[plr] = {ws = h.WalkSpeed, jp = h.JumpPower}
+                        h.WalkSpeed = 0
+                        h.JumpPower = 0
                     end
                 end
             end
         else
-            for _, obj in pairs(frozenObjects) do if obj and obj.Parent then obj.Anchored = false end end
-            frozenObjects = {}
+            for plr,data in pairs(frozenPlayers) do
+                if plr.Character then
+                    local h = plr.Character:FindFirstChild("Humanoid")
+                    if h then
+                        h.WalkSpeed = data.ws
+                        h.JumpPower = data.jp
+                    end
+                end
+            end
+            frozenPlayers = {}
         end
-end})
+    end
+})
 
-WorldTab:CreateSection("Diavolo: KING CRIMSON")
+--------------------------------------------------
+-- 😈 KING CRIMSON (ANIME)
+--------------------------------------------------
+WorldTab:CreateSection("KING CRIMSON")
+
 WorldTab:CreateButton({
-    Name = "TIME ERASE (10s Visual & Sound)",
+    Name = "Time Erase (Anime Mode)",
     Callback = function()
         if timeSkipping then return end
         timeSkipping = true
-        kcStartSound:Play()
-        playBlink()
-        kcColor.Enabled = true
-        
+
         local snapshot = {}
-        local partsToHide = {}
+        local ghostParts = {}
+        local clone
 
-        for _, pl in pairs(game.Players:GetPlayers()) do
-            if pl ~= p and pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
-                snapshot[pl.UserId] = pl.Character.HumanoidRootPart.CFrame
+        -- SAVE POS
+        for _,plr in pairs(game.Players:GetPlayers()) do
+            if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                snapshot[plr] = plr.Character.HumanoidRootPart.CFrame
             end
         end
 
-        for _, v in pairs(char:GetDescendants()) do
-            if (v:IsA("BasePart") or v:IsA("Decal")) and v.Transparency ~= 1 then
-                v.Transparency = 1
-                table.insert(partsToHide, v)
+        -- CLONE
+        clone = char:Clone()
+        clone.Parent = workspace
+
+        for _,v in pairs(clone:GetDescendants()) do
+            if v:IsA("BasePart") then
+                v.Anchored = true
+                v.CanCollide = false
+                v.Transparency = 0.5
+                v.Color = Color3.fromRGB(255,0,0)
             end
         end
-        hrp.CanCollide = false
+
+        -- GHOST
+        for _,v in pairs(char:GetDescendants()) do
+            if v:IsA("BasePart") then
+                v.Transparency = 0.6
+                v.CanCollide = false
+                table.insert(ghostParts, v)
+            end
+        end
+
+        -- EFFECT
+        local cc = Instance.new("ColorCorrectionEffect", game.Lighting)
+        cc.TintColor = Color3.fromRGB(255,50,50)
+
+        -- DASH
+        local dash
+        dash = RunService.RenderStepped:Connect(function()
+            if not timeSkipping then return end
+            hrp.CFrame = hrp.CFrame * CFrame.new(0,0,-2)
+        end)
 
         task.delay(10, function()
-            playBlink()
-            kcEndSound:Play()
-            kcColor.Enabled = false
-            for _, pl in pairs(game.Players:GetPlayers()) do
-                if pl ~= p and pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
-                    if snapshot[pl.UserId] then pl.Character.HumanoidRootPart.CFrame = snapshot[pl.UserId] end
+
+            if dash then dash:Disconnect() end
+
+            -- RESET OTHERS
+            for plr,cf in pairs(snapshot) do
+                if plr ~= p and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                    plr.Character.HumanoidRootPart.CFrame = cf
                 end
             end
-            for _, v in pairs(partsToHide) do v.Transparency = 0 end
-            hrp.CanCollide = true
+
+            if clone then clone:Destroy() end
+
+            for _,v in pairs(ghostParts) do
+                if v then
+                    v.Transparency = 0
+                    v.CanCollide = true
+                end
+            end
+
+            cc:Destroy()
             timeSkipping = false
-            Rayfield:Notify({Title = "King Crimson", Content = "Waktu kembali normal!", Duration = 3})
+
+            Rayfield:Notify({
+                Title = "King Crimson",
+                Content = "Time erased. Only you moved.",
+                Duration = 4
+            })
         end)
     end
 })
 
---- MISC ---
+--------------------------------------------------
+-- ⚙️ BOOST
+--------------------------------------------------
 MiscTab:CreateButton({
-    Name = "N4020 Super Boost",
+    Name = "N4020 Boost",
     Callback = function()
         settings().Rendering.QualityLevel = 1
-        for _, v in pairs(game:GetDescendants()) do
-            if v:IsA("BasePart") then v.Material = "SmoothPlastic" end
-            if v:IsA("Decal") or v:IsA("Texture") then v:Destroy() end
+        for _,v in pairs(game:GetDescendants()) do
+            if v:IsA("BasePart") then
+                v.Material = Enum.Material.SmoothPlastic
+            elseif v:IsA("Decal") or v:IsA("Texture") then
+                v:Destroy()
+            end
         end
     end
 })
